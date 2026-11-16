@@ -7,7 +7,7 @@ import { clamp, dist2 } from './random.js';
 /** The enemy bestiary: every type's shape, stats and behaviour. */
 export const ENEMY_TYPES = {
   mote: {
-    name: 'Mote', radius: 12, speed: 72, hp: 18, damage: 10, xp: 1, score: 10,
+    name: 'Mote', radius: 12, speed: 72, hp: 16, damage: 10, xp: 1, score: 10,
     color: '#ff4da6', core: '#ffd6e8', shape: 'spike', unlockAt: 0, weight: 10,
   },
   darter: {
@@ -29,10 +29,10 @@ export const ENEMY_TYPES = {
     splitsInto: 'mote', splitCount: 2,
   },
   warden: {
-    name: 'Warden', radius: 42, speed: 56, hp: 1250, damage: 25, xp: 25, score: 500,
+    name: 'Warden', radius: 42, speed: 56, hp: 800, damage: 20, xp: 25, score: 500,
     color: '#ffd166', core: '#fff3cf', shape: 'warden', unlockAt: 150, weight: 0,
-    boss: true, ranged: true, range: 9999, shotCooldown: 2.6, boltSpeed: 170,
-    radialShots: 10,
+    boss: true, ranged: true, range: 9999, shotCooldown: 3.0, boltSpeed: 160,
+    radialShots: 8,
   },
 };
 
@@ -150,7 +150,7 @@ export class Bolt {
     this.damage = damage;
     this.color = color;
     this.radius = 6;
-    this.life = 4;
+    this.life = 2.5;
   }
 
   update(dt) {
@@ -190,10 +190,18 @@ export class SpawnDirector {
     return 1 + elapsed * SPAWN.hpScalePerSecond;
   }
 
+  /** Bosses scale more gently than the swarm, so they stay killable. */
+  bossHpScaleAt(elapsed) {
+    return 1 + elapsed / 300;
+  }
+
   /** Weighted pick of an unlocked, non-boss type. */
-  pickType(elapsed) {
+  pickType(elapsed, enemies) {
+    // Spitters are capped: too many ranged attackers drown the arena in bolts.
+    const spitters = enemies.filter((e) => e.type === 'spitter').length;
     const pool = Object.entries(ENEMY_TYPES)
       .filter(([, def]) => !def.boss && elapsed >= def.unlockAt)
+      .filter(([type]) => type !== 'spitter' || spitters < 8)
       .map(([type, def]) => ({ type, weight: def.weight }));
     let total = 0;
     for (const entry of pool) total += entry.weight;
@@ -223,9 +231,11 @@ export class SpawnDirector {
   /**
    * Advance the director; returns the list of enemies to spawn this step
    * (possibly empty). `bossAlive` suppresses a scheduled boss until the
-   * current one falls.
+   * current one falls. In the final minute the Nova's returning light thins
+   * the swarm, so the climax is a triumph, not a wall.
    */
-  update(dt, elapsed, player, enemyCount, bossAlive) {
+  update(dt, elapsed, player, enemies, bossAlive) {
+    const enemyCount = enemies.length;
     const spawned = [];
     // Boss schedule: a Warden at 2:30, 5:00 and 7:30, one at a time.
     if (
@@ -234,17 +244,20 @@ export class SpawnDirector {
       && !bossAlive
     ) {
       const point = this.spawnPoint(player);
-      spawned.push(new Enemy('warden', point.x, point.y, this.hpScaleAt(elapsed), this.rng));
+      spawned.push(new Enemy('warden', point.x, point.y, this.bossHpScaleAt(elapsed), this.rng));
       this.bossesSpawned += 1;
       return spawned;
     }
     this.timer -= dt;
-    if (this.timer > 0 || enemyCount >= SPAWN.maxAlive) return spawned;
-    this.timer = this.intervalAt(elapsed);
+    // While a Warden lives, the swarm thins so the boss is the fight.
+    const cap = bossAlive ? 80 : SPAWN.maxAlive;
+    if (this.timer > 0 || enemyCount >= cap) return spawned;
+    const finalMinute = elapsed > 540 ? 1.6 : 1;
+    this.timer = this.intervalAt(elapsed) * (bossAlive ? 1.7 : 1) * finalMinute;
     const batch = this.batchAt(elapsed);
-    for (let i = 0; i < batch && enemyCount + spawned.length < SPAWN.maxAlive; i += 1) {
+    for (let i = 0; i < batch && enemyCount + spawned.length < cap; i += 1) {
       const point = this.spawnPoint(player);
-      spawned.push(new Enemy(this.pickType(elapsed), point.x, point.y, this.hpScaleAt(elapsed), this.rng));
+      spawned.push(new Enemy(this.pickType(elapsed, enemies), point.x, point.y, this.hpScaleAt(elapsed), this.rng));
     }
     return spawned;
   }

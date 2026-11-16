@@ -196,7 +196,7 @@ export class World {
     this.player.update(dt);
 
     // Spawning (bosses on schedule, the swarm on the director's clock).
-    const spawned = this.director.update(dt, this.elapsed, this.player, this.enemies.length, this.bossAlive);
+    const spawned = this.director.update(dt, this.elapsed, this.player, this.enemies, this.bossAlive);
     for (const enemy of spawned) {
       this.enemies.push(enemy);
       if (enemy.def.boss) {
@@ -215,7 +215,7 @@ export class World {
 
     // Weapons fire; their events become damage below.
     const events = [];
-    const fired = this.weapons.update(dt, this.player, this.enemies, this.stats, events);
+    const fired = this.weapons.update(dt, this.player, this.enemies, this.stats, events, this.bossAlive ? this.boss : null);
     this.projectiles.push(...fired.projectiles);
     this.beams.push(...fired.beams);
     for (const nova of fired.novas) this.detonateNova(nova);
@@ -248,7 +248,7 @@ export class World {
       if (event.type === 'hit') {
         if (event.source === 'shards') {
           const last = this.shardHitAt.get(event.enemy) ?? -1;
-          if (this.elapsed - last < 0.32) continue;
+          if (this.elapsed - last < 0.22) continue;
           this.shardHitAt.set(event.enemy, this.elapsed);
         }
         this.hitEnemy(event.enemy, event.damage, event.x, event.y, event.knock ?? 0, event.quiet);

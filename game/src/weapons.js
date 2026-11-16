@@ -13,11 +13,11 @@ export const WEAPONS = {
     name: 'Star Shards', icon: '✦', color: '#4df3ff',
     blurb: 'Blades of frozen starlight orbit you, shredding what they touch.',
     levels: [
-      { count: 2, damage: 12, radius: 74, speed: 3.4 },
-      { count: 3, damage: 13, radius: 78, speed: 3.7 },
-      { count: 3, damage: 16, radius: 84, speed: 4.0 },
-      { count: 4, damage: 18, radius: 90, speed: 4.3 },
-      { count: 5, damage: 22, radius: 98, speed: 4.8 },
+      { count: 2, damage: 16, radius: 74, speed: 3.4 },
+      { count: 3, damage: 17, radius: 78, speed: 3.7 },
+      { count: 3, damage: 20, radius: 84, speed: 4.0 },
+      { count: 4, damage: 23, radius: 90, speed: 4.3 },
+      { count: 5, damage: 28, radius: 98, speed: 4.8 },
     ],
   },
   nova: {
@@ -25,11 +25,11 @@ export const WEAPONS = {
     blurb: 'A heartbeat of the Nova itself: a ring of fire that knocks the swarm back.',
     cooldown: 2.3,
     levels: [
-      { count: 8, damage: 10, knock: 190 },
-      { count: 10, damage: 12, knock: 210 },
-      { count: 12, damage: 14, knock: 230 },
-      { count: 14, damage: 17, knock: 260 },
-      { count: 18, damage: 21, knock: 300 },
+      { count: 8, damage: 10, knock: 260 },
+      { count: 10, damage: 12, knock: 290 },
+      { count: 12, damage: 14, knock: 320 },
+      { count: 14, damage: 17, knock: 350 },
+      { count: 18, damage: 21, knock: 400 },
     ],
   },
   comet: {
@@ -154,8 +154,12 @@ export class WeaponRack {
     return [...this.owned.keys()];
   }
 
-  /** The nearest living enemy to a point, or null. */
-  nearestEnemy(x, y, enemies) {
+  /** The nearest living enemy to a point — the boss first when it is near. */
+  nearestEnemy(x, y, enemies, boss = null) {
+    if (boss && boss.alive && boss.awake) {
+      const bd = dist2(x, y, boss.x, boss.y);
+      if (bd < 700 * 700) return boss;
+    }
     let best = null;
     let bestDist = Infinity;
     for (const enemy of enemies) {
@@ -171,9 +175,10 @@ export class WeaponRack {
 
   /**
    * Fire every ready weapon. `stats` carries the Keeper's damage, haste and
-   * crit bonuses. Returns { projectiles, beams, novas, events }.
+   * crit bonuses; `boss` is the live Warden, if any, which aimed weapons
+   * prefer. Returns { projectiles, beams, novas, events }.
    */
-  update(dt, player, enemies, stats, events) {
+  update(dt, player, enemies, stats, events, boss = null) {
     const projectiles = [];
     const beams = [];
     const novas = [];
@@ -191,7 +196,7 @@ export class WeaponRack {
           if (!enemy.alive || !enemy.awake) continue;
           const rr = enemy.radius + 12;
           if (dist2(bx, by, enemy.x, enemy.y) < rr * rr) {
-            events.push({ type: 'hit', enemy, x: bx, y: by, damage: def.damage * stats.damage, source: 'shards', knock: 60 });
+            events.push({ type: 'hit', enemy, x: bx, y: by, damage: def.damage * stats.damage, source: 'shards', knock: 120 });
           }
         }
       }
@@ -227,7 +232,7 @@ export class WeaponRack {
       const ready = (this.cooldowns.get(id) ?? 0) - dt;
       this.cooldowns.set(id, ready);
       if (ready > 0) continue;
-      const target = this.nearestEnemy(player.x, player.y, enemies);
+      const target = this.nearestEnemy(player.x, player.y, enemies, boss);
       if (!target && id !== 'nova') continue;
       this.cooldowns.set(id, def.cooldown * haste);
 

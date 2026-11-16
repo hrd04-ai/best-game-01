@@ -31,10 +31,10 @@ export const PLAYER = {
   radius: 14,
   speed: 235, // px per second
   maxHp: 100,
-  invulnerableSeconds: 0.45, // brief grace after a hit
+  invulnerableSeconds: 0.6, // brief grace after a hit
   magnetRadius: 90,
   xpForLevel: (level) => 8 + (level - 1) * 6 + Math.floor((level - 1) * (level - 1) * 0.55),
-  regenPerSecond: 0,
+  regenPerSecond: 1.0, // the Nova slowly rekindles the Keeper's light
 };
 
 export const COMBO = {
@@ -45,12 +45,12 @@ export const COMBO = {
 
 export const SPAWN = {
   intervalStart: 1.05, // seconds between spawn ticks at 0:00
-  intervalEnd: 0.26, // seconds between spawn ticks at 10:00
+  intervalEnd: 0.4, // seconds between spawn ticks at 10:00
   batchStart: 1, // enemies per tick at 0:00
-  batchEnd: 4, // enemies per tick at 10:00
-  maxAlive: 150,
+  batchEnd: 3, // enemies per tick at 10:00
+  maxAlive: 110,
   telegraphSeconds: 0.7, // spawn warning ring before an enemy wakes
-  hpScalePerSecond: 1 / 75, // enemy HP grows ~1% every 0.75s of survival
+  hpScalePerSecond: 1 / 120, // enemy HP grows ~5x over the ten minutes
   bossTimes: [150, 300, 450], // Wardens arrive at 2:30, 5:00, 7:30
 };
 
@@ -61,7 +61,7 @@ export const SCORE = {
 };
 
 export const SHOTS = {
-  coverSeconds: 150, // the cover scene plays 2:30 of real game
+  coverSeconds: 170, // the cover scene plays 2:50 of real game — mid boss fight
   levelupSeconds: 75, // the level-up scene plays 1:15, then forces a choice
   victorySeconds: WIN_TIME,
 };

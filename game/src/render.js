@@ -94,7 +94,7 @@ export class Renderer {
   }
 
   /** Draw one enemy by its type's shape, with a glow and a hit flash. */
-  drawEnemy(enemy, time) {
+  drawEnemy(enemy, time, player) {
     const { ctx } = this;
     const def = enemy.def;
     const { x, y } = enemy;
@@ -115,15 +115,15 @@ export class Renderer {
     const flash = enemy.flash > 0;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.55;
-    const glowSize = r * 4.4;
+    ctx.globalAlpha = 0.38;
+    const glowSize = r * 3.4;
     ctx.drawImage(this.glow(def.color), x - glowSize / 2, y - glowSize / 2, glowSize, glowSize);
     ctx.restore();
     ctx.save();
     ctx.translate(x, y);
     ctx.fillStyle = flash ? '#ffffff' : def.color;
-    ctx.strokeStyle = def.core;
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(5, 8, 24, 0.85)';
+    ctx.lineWidth = 2.5;
     const wobble = Math.sin(time * 3 + enemy.wobble) * 0.08;
     if (def.shape === 'spike') {
       // A spiky mote: eight triangles around a core.
@@ -135,11 +135,12 @@ export class Renderer {
         ctx.lineTo(Math.cos(a2) * r * 0.8, Math.sin(a2) * r * 0.8);
       }
       ctx.fill();
+      ctx.stroke();
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
       ctx.fill();
     } else if (def.shape === 'dart') {
-      ctx.rotate(Math.atan2(enemy.y - 360, enemy.x - 640) + Math.PI / 2 + wobble);
+      ctx.rotate(Math.atan2(player.y - enemy.y, player.x - enemy.x) + Math.PI / 2 + wobble);
       ctx.beginPath();
       ctx.moveTo(0, -r * 1.4);
       ctx.lineTo(r * 0.9, r);
@@ -147,6 +148,7 @@ export class Renderer {
       ctx.lineTo(-r * 0.9, r);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
     } else if (def.shape === 'hex') {
       ctx.beginPath();
       for (let i = 0; i < 6; i += 1) {
@@ -163,7 +165,10 @@ export class Renderer {
       ctx.fill();
     } else if (def.shape === 'diamond') {
       ctx.rotate(Math.PI / 4 + wobble);
-      ctx.fillRect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6);
+      ctx.beginPath();
+      ctx.rect(-r * 0.8, -r * 0.8, r * 1.6, r * 1.6);
+      ctx.fill();
+      ctx.stroke();
       ctx.beginPath();
       ctx.arc(0, 0, r * 0.4, 0, Math.PI * 2);
       ctx.fillStyle = def.core;
@@ -173,6 +178,7 @@ export class Renderer {
       ctx.arc(-r * 0.5, 0, r * 0.72, 0, Math.PI * 2);
       ctx.arc(r * 0.5, 0, r * 0.72, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
       ctx.beginPath();
       ctx.arc(-r * 0.5, 0, r * 0.28, 0, Math.PI * 2);
       ctx.arc(r * 0.5, 0, r * 0.28, 0, Math.PI * 2);
@@ -276,7 +282,7 @@ export class Renderer {
       ctx.restore();
     }
 
-    for (const enemy of world.enemies) this.drawEnemy(enemy, time);
+    for (const enemy of world.enemies) this.drawEnemy(enemy, time, world.player);
 
     // Enemy bolts: glowing orbs with a hot core.
     for (const bolt of world.bolts) {
@@ -433,15 +439,15 @@ export class Renderer {
       const boss = world.boss;
       const bw = 520;
       const bx = (ARENA.width - bw) / 2;
-      const by = 72;
+      const by = 86;
+      ctx.font = `800 13px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffd166';
+      ctx.fillText('⚠  THE WARDEN  ⚠', ARENA.width / 2, by - 6);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(bx - 4, by - 4, bw + 8, 22);
       ctx.fillStyle = '#ffd166';
       ctx.fillRect(bx, by, bw * (boss.hp / boss.maxHp), 14);
-      ctx.font = `800 12px ${FONT}`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fff3cf';
-      ctx.fillText('⚠ THE WARDEN ⚠', ARENA.width / 2, by + 12);
     }
 
     // Low-health vignette: the screen closes in as the light fades.
@@ -527,10 +533,12 @@ export class Renderer {
   drawTitle(world, time, ui, hover) {
     const { ctx } = this;
     this.drawBackground(time);
-    // A few decorative motes drift across the title, so it is alive.
+    // A few decorative motes drift across the title, above and below the
+    // text, so the screen is alive without covering the words.
+    const lanes = [80, 130, 420, 625, 665];
     for (let i = 0; i < 7; i += 1) {
       const x = ((i * 197 + time * 12) % (ARENA.width + 80)) - 40;
-      const y = 120 + i * 78 + Math.sin(time * 0.7 + i) * 18;
+      const y = lanes[i % lanes.length] + Math.sin(time * 0.7 + i) * 14;
       ctx.save();
       ctx.globalAlpha = 0.5;
       ctx.globalCompositeOperation = 'lighter';

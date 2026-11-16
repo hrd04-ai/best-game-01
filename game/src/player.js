@@ -95,9 +95,12 @@ export class Player {
     return gained;
   }
 
-  /** Tick the invulnerability timer. */
+  /** Tick the invulnerability timer and the slow rekindling of health. */
   update(dt) {
     if (this.invulnerable > 0) this.invulnerable -= dt;
+    if (this.hp > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + PLAYER.regenPerSecond * dt);
+    }
   }
 
   /** Reset for a new run. */
