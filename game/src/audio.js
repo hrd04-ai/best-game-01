@@ -153,6 +153,19 @@ export class SoundEngine {
     this.blip({ type: 'sawtooth', from: 98, to: 98, seconds: 0.5, volume: 0.25, when: 0.6 });
   }
 
+  /** A relic claimed: a bright rising arpeggio. */
+  relic() {
+    [659.25, 783.99, 1046.5, 1318.5].forEach((freq, i) => {
+      this.blip({ type: 'triangle', from: freq, to: freq, seconds: 0.22, volume: 0.2, when: i * 0.08 });
+    });
+  }
+
+  /** The sky darkens into a new phase: a low chord swell. */
+  phase() {
+    this.blip({ type: 'sine', from: 130.81, to: 98, seconds: 0.9, volume: 0.22 });
+    this.blip({ type: 'sine', from: 196, to: 164.81, seconds: 0.9, volume: 0.16, when: 0.1 });
+  }
+
   victory() {
     FANFARE.forEach((freq, i) => {
       this.blip({ type: 'triangle', from: freq, to: freq, seconds: 0.4, volume: 0.22, when: i * 0.14 });

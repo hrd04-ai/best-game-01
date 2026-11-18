@@ -51,8 +51,48 @@ export const SPAWN = {
   maxAlive: 110,
   telegraphSeconds: 0.7, // spawn warning ring before an enemy wakes
   hpScalePerSecond: 1 / 120, // enemy HP grows ~5x over the ten minutes
-  bossTimes: [150, 300, 450], // Wardens arrive at 2:30, 5:00, 7:30
 };
+
+// The sky darkens in three phases as the Nova fades: each phase re-paints
+// the arena and is announced, so the run visibly changes as it deepens.
+export const PHASES = [
+  {
+    name: 'DUSK', at: 0, roman: 'I',
+    top: '#0a0e27', bottom: '#141036',
+    nebula: ['rgba(77, 243, 255, 0.10)', 'rgba(255, 77, 166, 0.10)', 'rgba(255, 209, 102, 0.07)'],
+    banner: '', sub: '',
+  },
+  {
+    name: 'ECLIPSE', at: 200, roman: 'II',
+    top: '#120a2a', bottom: '#2b1038',
+    nebula: ['rgba(123, 77, 255, 0.13)', 'rgba(255, 77, 166, 0.12)', 'rgba(255, 159, 67, 0.08)'],
+    banner: 'THE ECLIPSE DEEPENS', sub: 'The dark grows bolder — new horrors stir',
+  },
+  {
+    name: 'VOIDSTORM', at: 400, roman: 'III',
+    top: '#0a0618', bottom: '#220b2e',
+    nebula: ['rgba(255, 77, 109, 0.11)', 'rgba(123, 77, 255, 0.13)', 'rgba(255, 209, 102, 0.08)'],
+    banner: 'THE VOIDSTORM BREAKS', sub: 'Hold the light. The Nova is near.',
+  },
+];
+
+/** The phase index (0, 1 or 2) for an elapsed time. */
+export function phaseAt(elapsed) {
+  let phase = 0;
+  for (let i = 0; i < PHASES.length; i += 1) {
+    if (elapsed >= PHASES[i].at) phase = i;
+  }
+  return phase;
+}
+
+// Kill-streak callouts: chaining kills without a quiet stretch earns a
+// shout and a score bonus, once per chain at each threshold.
+export const STREAKS = {
+  10: 'RAMPAGE!',
+  25: 'FRENZY!',
+  50: 'UNSTOPPABLE!',
+};
+export const STREAK_BONUS = { 10: 100, 25: 250, 50: 500 };
 
 export const SCORE = {
   perSecondSurvived: 10,
@@ -61,7 +101,7 @@ export const SCORE = {
 };
 
 export const SHOTS = {
-  coverSeconds: 170, // the cover scene plays 2:50 of real game — mid boss fight
+  coverSeconds: 310, // the cover scene plays 5:10 of real game — the Herald fight, Eclipse sky, one relic claimed
   levelupSeconds: 75, // the level-up scene plays 1:15, then forces a choice
   victorySeconds: WIN_TIME,
 };

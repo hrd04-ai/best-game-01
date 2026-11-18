@@ -13,9 +13,15 @@ reignites. Survive 10 minutes to win.
   weapons, or passives (speed, vitality, magnet, damage, haste, luck).
 - **5 weapons** (orbiting Star Shards, radial Pulse Nova, homing Comets,
   slowing Frost Ring, piercing Rail Lance), each with 5 levels.
-- **6 enemy types** — Motes, Darters, Bulwarks, Spitters, Splitters, and the
-  elite Wardens that arrive every 2:30 — with a spawn director that keeps
-  raising the pressure.
+- **6 enemy types** — Motes, Darters, Bulwarks, Spitters, Splitters, and three
+  distinct bosses: the Warden (2:30, ring of bolts), the Herald of the Void
+  (5:00, aimed fan + births Motes), and the Devourer (7:30, telegraphed charge
+  + dense bolt ring) — with a spawn director that keeps raising the pressure.
+- **3 relics**: each fallen boss drops one — Ember Heart, Starforge Lens,
+  Void Magnet — claimed by walking over it, kept for the whole run.
+- **3 phases of the darkening sky** — Dusk, Eclipse, Voidstorm — each
+  re-painting the arena, plus kill-streak callouts (RAMPAGE / FRENZY /
+  UNSTOPPABLE) with score bonuses for unbroken chains.
 - **Win** by surviving until 10:00; **lose** when your light runs out.
   Score comes from kills, survival time, and your level. Pause with Esc/P,
   mute with M.
@@ -44,7 +50,9 @@ screenshot is a true render of the game's own code. `shots.json` lists them.
 - `game/src/audio.js` — synthesized sound effects and music
 - `game/src/input.js` — keyboard, mouse and touch
 - `game/src/particles.js` — particles, shockwaves, floating text, screen shake
-- `game/src/enemies.js` — enemy types, spawn director and enemy AI
+- `game/src/enemies.js` — swarm types, spawn director and enemy AI
+- `game/src/bosses.js` — the three bosses: Warden, Herald, Devourer
+- `game/src/relics.js` — the bosses' loot: Ember Heart, Starforge Lens, Void Magnet
 - `game/src/weapons.js` — weapon definitions, firing and projectiles
 - `game/src/upgrades.js` — the upgrade pool and level-up choices
 - `game/src/player.js` — the Keeper: movement, health, XP and levels

@@ -1,10 +1,12 @@
-// NOVA KEEPER — the Voidspawn: six enemy types, the spawn director that
-// raises the pressure over ten minutes, and each type's movement AI.
+// NOVA KEEPER — the Voidspawn: five swarm types, the spawn director that
+// raises the pressure over ten minutes, and each type's movement AI. The
+// three bosses live in bosses.js; this file only spawns them on schedule.
 
 import { ARENA, SPAWN } from './config.js';
+import { BOSS_TYPES, BOSS_SCHEDULE } from './bosses.js';
 import { clamp, dist2 } from './random.js';
 
-/** The enemy bestiary: every type's shape, stats and behaviour. */
+/** The swarm bestiary: every type's shape, stats and behaviour. */
 export const ENEMY_TYPES = {
   mote: {
     name: 'Mote', radius: 12, speed: 72, hp: 16, damage: 10, xp: 1, score: 10,
@@ -28,18 +30,13 @@ export const ENEMY_TYPES = {
     color: '#ff4d6d', core: '#ffd6dd', shape: 'twin', unlockAt: 210, weight: 4,
     splitsInto: 'mote', splitCount: 2,
   },
-  warden: {
-    name: 'Warden', radius: 42, speed: 56, hp: 800, damage: 20, xp: 25, score: 500,
-    color: '#ffd166', core: '#fff3cf', shape: 'warden', unlockAt: 150, weight: 0,
-    boss: true, ranged: true, range: 9999, shotCooldown: 3.0, boltSpeed: 160,
-    radialShots: 8,
-  },
 };
 
 /** One live enemy: type, position, health, and AI timers. */
 export class Enemy {
   constructor(type, x, y, hpScale, rng) {
-    const def = ENEMY_TYPES[type];
+    // Swarm types come from ENEMY_TYPES, bosses from BOSS_TYPES.
+    const def = ENEMY_TYPES[type] ?? BOSS_TYPES[type];
     this.type = type;
     this.def = def;
     this.x = x;
@@ -55,6 +52,12 @@ export class Enemy {
     this.telegraph = SPAWN.telegraphSeconds; // counts down before it wakes
     this.knockX = 0;
     this.knockY = 0;
+    // Boss-only timers: the Devourer's charge and the Herald's summons.
+    this.chargeTimer = def.charge ? rng.range(4, 6) : 0;
+    this.chargeState = 'idle'; // 'idle' | 'windup' | 'dashing'
+    this.chargeDir = { x: 1, y: 0 }; // locked when the windup starts
+    this.chargeTime = 0;
+    this.summonTimer = def.summons ? rng.range(5, 7) : 0;
   }
 
   get radius() {
@@ -95,7 +98,10 @@ export class Enemy {
 
   /**
    * Steer toward (or, for ranged types, around) the player, then integrate
-   * movement and knockback. Returns 'shoot' when a ranged enemy fires.
+   * movement and knockback. Returns 'shoot' when a ranged enemy fires, or
+   * 'summon' when the Herald births Motes. The Devourer's charge overrides
+   * steering: it winds up (frozen, telegraphing), then dashes in a straight
+   * line — the renderer draws the warning, the autopilot sidesteps it.
    */
   update(dt, player, now, bolts, rng) {
     if (this.flash > 0) this.flash -= dt;
@@ -118,16 +124,58 @@ export class Enemy {
       mx = -mx;
       my = -my;
     }
+    // The Devourer's charge: wind up frozen, then dash along a locked line.
+    let moveSpeed = speed;
+    let wobbleAmp = 0.35;
+    if (this.def.charge) {
+      if (this.chargeState === 'windup') {
+        this.chargeTime -= dt;
+        if (this.chargeTime <= 0) {
+          this.chargeState = 'dashing';
+          this.chargeTime = 0.45;
+        }
+        moveSpeed = 0;
+        wobbleAmp = 0;
+      } else if (this.chargeState === 'dashing') {
+        mx = this.chargeDir.x;
+        my = this.chargeDir.y;
+        moveSpeed = 560;
+        wobbleAmp = 0;
+        this.chargeTime -= dt;
+        if (this.chargeTime <= 0) {
+          this.chargeState = 'idle';
+          this.chargeTimer = rng.range(5, 7);
+        }
+      } else {
+        this.chargeTimer -= dt;
+        if (this.chargeTimer <= 0 && distance < 520) {
+          this.chargeState = 'windup';
+          this.chargeTime = 0.6;
+          this.chargeDir = { x: dx / distance, y: dy / distance };
+          moveSpeed = 0;
+          wobbleAmp = 0;
+        }
+      }
+    }
     // A slight sideways wobble keeps the swarm from moving in lockstep.
-    const wobble = Math.sin(now * 2.1 + this.wobble) * 0.35;
+    const wobble = Math.sin(now * 2.1 + this.wobble) * wobbleAmp;
     const px = -my * wobble;
     const py = mx * wobble;
-    this.x += (mx + px) * speed * dt + this.knockX * dt;
-    this.y += (my + py) * speed * dt + this.knockY * dt;
+    this.x += (mx + px) * moveSpeed * dt + this.knockX * dt;
+    this.y += (my + py) * moveSpeed * dt + this.knockY * dt;
     this.knockX *= 1 - 8 * dt;
     this.knockY *= 1 - 8 * dt;
     this.x = clamp(this.x, this.radius, ARENA.width - this.radius);
     this.y = clamp(this.y, this.radius, ARENA.height - this.radius);
+
+    // The Herald births Motes on its own clock.
+    if (this.def.summons) {
+      this.summonTimer -= dt;
+      if (this.summonTimer <= 0) {
+        this.summonTimer = this.def.summonCooldown;
+        return 'summon';
+      }
+    }
 
     if (this.def.ranged) {
       this.shotTimer -= dt;
@@ -237,19 +285,17 @@ export class SpawnDirector {
   update(dt, elapsed, player, enemies, bossAlive) {
     const enemyCount = enemies.length;
     const spawned = [];
-    // Boss schedule: a Warden at 2:30, 5:00 and 7:30, one at a time.
-    if (
-      this.bossesSpawned < SPAWN.bossTimes.length
-      && elapsed >= SPAWN.bossTimes[this.bossesSpawned]
-      && !bossAlive
-    ) {
+    // Boss schedule: the Warden at 2:30, the Herald at 5:00, the Devourer
+    // at 7:30, one at a time (see BOSS_SCHEDULE in bosses.js).
+    const nextBoss = BOSS_SCHEDULE[this.bossesSpawned];
+    if (nextBoss && elapsed >= nextBoss.at && !bossAlive) {
       const point = this.spawnPoint(player);
-      spawned.push(new Enemy('warden', point.x, point.y, this.bossHpScaleAt(elapsed), this.rng));
+      spawned.push(new Enemy(nextBoss.type, point.x, point.y, this.bossHpScaleAt(elapsed), this.rng));
       this.bossesSpawned += 1;
       return spawned;
     }
     this.timer -= dt;
-    // While a Warden lives, the swarm thins so the boss is the fight.
+    // While a boss lives, the swarm thins so the boss is the fight.
     const cap = bossAlive ? 80 : SPAWN.maxAlive;
     if (this.timer > 0 || enemyCount >= cap) return spawned;
     const finalMinute = elapsed > 540 ? 1.6 : 1;

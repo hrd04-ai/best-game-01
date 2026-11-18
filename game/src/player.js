@@ -5,7 +5,7 @@
 import { ARENA, PLAYER } from './config.js';
 import { clamp } from './random.js';
 
-/** The Keeper's derived combat stats (weapons and passives feed these). */
+/** The Keeper's derived combat stats (weapons, passives and relics feed these). */
 export function baseStats() {
   return {
     speed: PLAYER.speed,
@@ -14,6 +14,8 @@ export function baseStats() {
     damage: 1, // multiplier
     haste: 1, // cooldown multiplier (lower is faster)
     crit: 0.05, // base 5% critical chance
+    regen: PLAYER.regenPerSecond, // health per second, raised by the Ember Heart
+    xpBonus: 0, // extra starlight per shard, from the Void Magnet
   };
 }
 
@@ -99,7 +101,8 @@ export class Player {
   update(dt) {
     if (this.invulnerable > 0) this.invulnerable -= dt;
     if (this.hp > 0 && this.hp < this.maxHp) {
-      this.hp = Math.min(this.maxHp, this.hp + PLAYER.regenPerSecond * dt);
+      const regen = this.stats?.regen ?? PLAYER.regenPerSecond;
+      this.hp = Math.min(this.maxHp, this.hp + regen * dt);
     }
   }
 

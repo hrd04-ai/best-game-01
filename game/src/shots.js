@@ -57,6 +57,17 @@ export function autopilot(world) {
     fx += (-cy / cl) * 1.1;
     fy += (cx / cl) * 1.1;
   }
+  // The Devourer's charge: when it winds up or dashes, sidestep out of its
+  // path — perpendicular to the locked charge line, toward the nearer side.
+  const boss = world.boss;
+  if (boss && boss.type === 'devourer' && boss.chargeState !== 'idle') {
+    const cd = boss.chargeDir;
+    const px = -cd.y;
+    const py = cd.x;
+    const side = ((player.x - boss.x) * px + (player.y - boss.y) * py) >= 0 ? 1 : -1;
+    fx += px * side * 5;
+    fy += py * side * 5;
+  }
   // Dodge incoming bolts: sidestep away from any bolt closing in.
   for (const bolt of world.bolts) {
     const dx = player.x - bolt.x;

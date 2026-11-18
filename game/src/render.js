@@ -2,11 +2,12 @@
 // entities, the HUD and the screens. All art is drawn in code; the glow
 // sprites are pre-rendered once so 150 enemies still run at 60fps.
 
-import { ARENA, PALETTE, WIN_TIME } from './config.js';
+import { ARENA, PALETTE, PHASES, WIN_TIME, phaseAt } from './config.js';
 import { makeRng } from './random.js';
 import { STATE_TITLE, STATE_PLAY, STATE_LEVELUP, STATE_PAUSE, STATE_OVER, STATE_VICTORY } from './world.js';
 import { layoutTitle, layoutLevelUp, layoutPause, layoutEnd, layoutPlay } from './screens.js';
 import { WEAPONS } from './weapons.js';
+import { RELICS } from './relics.js';
 
 const FONT = "system-ui, 'Segoe UI', sans-serif";
 
@@ -65,19 +66,20 @@ export class Renderer {
     return canvas;
   }
 
-  /** Draw the arena: gradient, nebula drift, starfield, border. */
-  drawBackground(time) {
+  /** Draw the arena: the phase's gradient, nebula drift, starfield, border. */
+  drawBackground(elapsed, time) {
     const { ctx } = this;
+    const phase = PHASES[phaseAt(elapsed)];
     const gradient = ctx.createLinearGradient(0, 0, 0, ARENA.height);
-    gradient.addColorStop(0, PALETTE.voidTop);
-    gradient.addColorStop(1, PALETTE.voidBottom);
+    gradient.addColorStop(0, phase.top);
+    gradient.addColorStop(1, phase.bottom);
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, ARENA.width, ARENA.height);
     // Slow-drifting nebula blobs (pure time functions, so screenshots repeat).
     const blobs = [
-      { x: 260 + Math.sin(time * 0.021) * 60, y: 180 + Math.cos(time * 0.017) * 40, r: 300, color: PALETTE.nebulaCyan },
-      { x: 1020 + Math.cos(time * 0.015) * 70, y: 480 + Math.sin(time * 0.019) * 50, r: 340, color: PALETTE.nebulaMagenta },
-      { x: 640 + Math.sin(time * 0.011) * 90, y: 620 + Math.cos(time * 0.013) * 30, r: 260, color: PALETTE.nebulaGold },
+      { x: 260 + Math.sin(time * 0.021) * 60, y: 180 + Math.cos(time * 0.017) * 40, r: 300, color: phase.nebula[0] },
+      { x: 1020 + Math.cos(time * 0.015) * 70, y: 480 + Math.sin(time * 0.019) * 50, r: 340, color: phase.nebula[1] },
+      { x: 640 + Math.sin(time * 0.011) * 90, y: 620 + Math.cos(time * 0.013) * 30, r: 260, color: phase.nebula[2] },
     ];
     for (const blob of blobs) {
       const g = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.r);
@@ -204,8 +206,67 @@ export class Renderer {
       ctx.arc(0, 0, r * 0.28, 0, Math.PI * 2);
       ctx.fillStyle = def.color;
       ctx.fill();
+    } else if (def.shape === 'herald') {
+      // The Herald: a diamond core ringed by six orbiting eyes.
+      ctx.beginPath();
+      ctx.moveTo(0, -r);
+      ctx.lineTo(r * 0.8, 0);
+      ctx.lineTo(0, r);
+      ctx.lineTo(-r * 0.8, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.34, 0, Math.PI * 2);
+      ctx.fillStyle = def.core;
+      ctx.fill();
+      for (let i = 0; i < 6; i += 1) {
+        const a = (i / 6) * Math.PI * 2 + time * 1.4 + enemy.wobble;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r * 1.35, Math.sin(a) * r * 1.35, r * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = def.color;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * r * 1.35, Math.sin(a) * r * 1.35, r * 0.1, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+      }
+    } else if (def.shape === 'devourer') {
+      // The Devourer: a jagged maw, the largest enemy in the game.
+      ctx.beginPath();
+      for (let i = 0; i < 10; i += 1) {
+        const a = (i / 10) * Math.PI * 2 + wobble;
+        const rr = i % 2 === 0 ? r * 1.35 : r * 0.85;
+        if (i === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(5, 8, 24, 0.9)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = def.core;
+      ctx.fill();
     }
     ctx.restore();
+    // The Devourer's charge telegraph: a dashed warning line down its path.
+    if (enemy.chargeState === 'windup') {
+      const pulse = 0.5 + 0.5 * Math.sin(time * 18);
+      ctx.save();
+      ctx.globalAlpha = 0.35 + 0.45 * pulse;
+      ctx.strokeStyle = '#ff4d6d';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([14, 10]);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + enemy.chargeDir.x * 300, y + enemy.chargeDir.y * 300);
+      ctx.stroke();
+      ctx.restore();
+    }
     // A health bar over anything hurt (bosses get the big bar in the HUD).
     if (enemy.hp < enemy.maxHp && !def.boss) {
       const w = r * 2;
@@ -251,7 +312,7 @@ export class Renderer {
     const offset = world.particles.offset;
     ctx.save();
     ctx.translate(offset.x, offset.y);
-    this.drawBackground(world.elapsed + time * 0.15);
+    this.drawBackground(world.elapsed, time);
 
     // Frost aura under everything else.
     const frostRadius = world.weapons.frostRadius;
@@ -279,6 +340,33 @@ export class Renderer {
       ctx.fillStyle = PALETTE.gem;
       const s = 5 + Math.min(3, gem.value);
       ctx.fillRect(-s / 2, -s / 2, s, s);
+      ctx.restore();
+    }
+
+    // Unclaimed relics: large pulsing diamonds, impossible to miss.
+    for (const drop of world.relicDrops) {
+      const relic = RELICS[drop.id];
+      const pulse = 1 + Math.sin(time * 5 + drop.age * 3) * 0.12;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.6;
+      ctx.drawImage(this.glow(relic.color), drop.x - 44, drop.y - 44, 88, 88);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(drop.x, drop.y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = relic.color;
+      const s = 17 * pulse;
+      ctx.fillRect(-s / 2, -s / 2, s, s);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-s / 2, -s / 2, s, s);
+      ctx.restore();
+      ctx.save();
+      ctx.font = '700 16px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(relic.icon, drop.x, drop.y + 6);
       ctx.restore();
     }
 
@@ -384,6 +472,12 @@ export class Renderer {
     ctx.textAlign = 'left';
     ctx.fillText(`LEVEL ${player.level}`, 14, 30);
 
+    // The sky's phase, under the level: the run's chapter, always visible.
+    const phase = PHASES[world.phase];
+    ctx.font = `700 11px ${FONT}`;
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.fillText(`PHASE ${phase.roman} · ${phase.name}`, 14, 48);
+
     // Timer, centre-top: the goal is always in sight.
     const remaining = Math.max(0, WIN_TIME - world.elapsed);
     ctx.textAlign = 'center';
@@ -434,7 +528,26 @@ export class Renderer {
       wx += 72;
     }
 
-    // Boss health bar, under the timer, while a Warden lives.
+    // Claimed relics, bottom-right: one glowing chip per treasure.
+    if (world.relics.length > 0) {
+      let rx = ARENA.width - 16;
+      ctx.textAlign = 'left';
+      for (let i = world.relics.length - 1; i >= 0; i -= 1) {
+        const relic = RELICS[world.relics[i]];
+        rx -= 34;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(rx, hpY - 4, 30, 26);
+        ctx.font = `700 17px ${FONT}`;
+        ctx.fillStyle = relic.color;
+        ctx.fillText(relic.icon, rx + 7, hpY + 15);
+      }
+      ctx.font = `700 11px ${FONT}`;
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.textAlign = 'right';
+      ctx.fillText('RELICS', ARENA.width - 16, hpY - 10);
+    }
+
+    // Boss health bar, under the timer, while a champion lives.
     if (world.bossAlive) {
       const boss = world.boss;
       const bw = 520;
@@ -442,11 +555,11 @@ export class Renderer {
       const by = 86;
       ctx.font = `800 13px ${FONT}`;
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#ffd166';
-      ctx.fillText('⚠  THE WARDEN  ⚠', ARENA.width / 2, by - 6);
+      ctx.fillStyle = boss.def.color;
+      ctx.fillText(`⚠  ${boss.def.name}  ⚠`, ARENA.width / 2, by - 6);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(bx - 4, by - 4, bw + 8, 22);
-      ctx.fillStyle = '#ffd166';
+      ctx.fillStyle = boss.def.color;
       ctx.fillRect(bx, by, bw * (boss.hp / boss.maxHp), 14);
     }
 
@@ -532,7 +645,7 @@ export class Renderer {
   /** The title screen: the name, the goal, the controls, the start button. */
   drawTitle(world, time, ui, hover) {
     const { ctx } = this;
-    this.drawBackground(time);
+    this.drawBackground(0, time);
     // A few decorative motes drift across the title, above and below the
     // text, so the screen is alive without covering the words.
     const lanes = [80, 130, 420, 625, 665];
@@ -559,7 +672,7 @@ export class Renderer {
     ctx.font = `500 16px ${FONT}`;
     ctx.fillStyle = PALETTE.textDim;
     ctx.fillText('Your weapons fire on their own — you move, you dodge, you choose how to grow.', ARENA.width / 2, 282);
-    ctx.fillText('Collect starlight · level up · pick 1 of 3 upgrades · survive the Wardens.', ARENA.width / 2, 306);
+    ctx.fillText('Collect starlight · level up · slay 3 bosses · claim their relics.', ARENA.width / 2, 306);
     ctx.font = `700 15px ${FONT}`;
     ctx.fillStyle = PALETTE.text;
     ctx.fillText('MOVE  WASD / arrows / hold mouse      PAUSE  Esc      MUTE  M', ARENA.width / 2, 348);
@@ -598,7 +711,8 @@ export class Renderer {
       ['MOVE', 'WASD or arrow keys, or hold the mouse button and the Keeper follows the cursor.'],
       ['FIGHT', 'Weapons fire automatically. Kills drop starlight shards — walk over them to collect XP.'],
       ['GROW', 'Each level offers 3 upgrade cards: new weapons, stronger weapons, and passives. Pick one (click or 1/2/3). Reroll once per level with R.'],
-      ['ENEMIES', 'Motes chase, Darters rush, Bulwarks soak damage, Spitters shoot, Splitters divide — and a Warden arrives every 2:30.'],
+      ['ENEMIES', 'Motes chase, Darters rush, Bulwarks soak damage, Spitters shoot, Splitters divide — and the Warden (2:30), the Herald (5:00) and the Devourer (7:30) each guard a relic.'],
+      ['RELICS', 'Each fallen boss drops a relic: walk over it to claim its power for the rest of the run.'],
       ['SCORE', 'Kills × your combo multiplier, plus survival time and level bonuses. Chain kills to raise the combo.'],
     ];
     let y = panel.y + 96;
@@ -788,15 +902,24 @@ export class Renderer {
       ctx.fillText(value, x + 300, y);
       ctx.font = `700 15px ${FONT}`;
     });
-    // The final build: weapon icons with levels.
+    // The final build: weapon icons with levels, and the relics claimed.
     ctx.textAlign = 'center';
     ctx.font = `700 14px ${FONT}`;
     ctx.fillStyle = PALETTE.textDim;
-    ctx.fillText('FINAL BUILD', ARENA.width / 2, 462);
+    ctx.fillText('FINAL BUILD', ARENA.width / 2, 448);
     const build = s.weapons.map((w) => `${WEAPONS[w.id].icon} ${WEAPONS[w.id].name} Lv${w.level}`).join('   ·   ');
     ctx.font = `600 16px ${FONT}`;
     ctx.fillStyle = PALETTE.text;
-    ctx.fillText(build || 'Star Shards Lv1', ARENA.width / 2, 486);
+    ctx.fillText(build || 'Star Shards Lv1', ARENA.width / 2, 470);
+    if (s.relics.length > 0) {
+      const relicLine = s.relics.map((r) => `${r.icon} ${r.name}`).join('   ·   ');
+      ctx.font = `700 14px ${FONT}`;
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.fillText('RELICS CLAIMED', ARENA.width / 2, 496);
+      ctx.font = `600 16px ${FONT}`;
+      ctx.fillStyle = PALETTE.gold;
+      ctx.fillText(relicLine, ARENA.width / 2, 518);
+    }
     const layout = layoutEnd();
     this.drawButton(layout.again, won ? '▶  PLAY AGAIN' : '↻  TRY AGAIN', { primary: true, hovered: hover === 'again', fontSize: 22 });
     this.drawButton(layout.title, 'TITLE SCREEN', { hovered: hover === 'title', fontSize: 16 });

@@ -46,8 +46,8 @@ export function layoutPause() {
 /** The end screens' buttons (game over and victory share the layout). */
 export function layoutEnd() {
   return {
-    again: { x: 490, y: 506, w: 300, h: 60 },
-    title: { x: 490, y: 580, w: 300, h: 48 },
+    again: { x: 490, y: 536, w: 300, h: 60 },
+    title: { x: 490, y: 610, w: 300, h: 48 },
   };
 }
 

@@ -1,12 +1,13 @@
 // NOVA KEEPER — the world: the game state machine, the fixed-step update,
-// collisions, pickups, the kill combo and the score. Everything the screens
-// show comes from here.
+// collisions, pickups, the kill combo and streaks, the darkening phases, and
+// the bosses' relic drops. Everything the screens show comes from here.
 
-import { ARENA, COMBO, SCORE, WIN_TIME } from './config.js';
+import { ARENA, COMBO, PHASES, SCORE, SPAWN, STREAKS, STREAK_BONUS, WIN_TIME, phaseAt } from './config.js';
 import { makeRng, clamp, dist2 } from './random.js';
 import { Player, baseStats } from './player.js';
 import { WeaponRack } from './weapons.js';
 import { SpawnDirector, Bolt, Enemy } from './enemies.js';
+import { RELICS, relicForBossIndex } from './relics.js';
 import { Particles } from './particles.js';
 import { rollChoices, applyChoice } from './upgrades.js';
 
@@ -71,12 +72,17 @@ export class World {
     this.beams = [];
     this.bolts = [];
     this.gems = [];
+    this.relicDrops = []; // unclaimed relics lying on the arena floor
+    this.relics = []; // relic ids claimed this run, in claim order
+    this.bossesSlain = 0;
+    this.phase = 0; // the sky's phase: 0 Dusk, 1 Eclipse, 2 Voidstorm
     this.state = STATE_TITLE;
     this.elapsed = 0;
     this.kills = 0;
     this.score = 0;
     this.combo = 1;
     this.comboTimer = 0;
+    this.chainKills = 0; // kills in the current unbroken chain (streaks)
     this.levelUps = 0;
     this.boss = null;
     this.choices = [];
@@ -112,12 +118,17 @@ export class World {
     this.beams = [];
     this.bolts = [];
     this.gems = [];
+    this.relicDrops = [];
+    this.relics = [];
+    this.bossesSlain = 0;
+    this.phase = 0;
     this.state = STATE_PLAY;
     this.elapsed = 0;
     this.kills = 0;
     this.score = 0;
     this.combo = 1;
     this.comboTimer = 0;
+    this.chainKills = 0;
     this.levelUps = 0;
     this.boss = null;
     this.choices = [];
@@ -183,12 +194,24 @@ export class World {
     this.elapsed += dt;
     this.score += SCORE.perSecondSurvived * dt;
 
-    // Combo decay: the multiplier falls a step after a quiet stretch.
+    // The sky darkens: a phase change is announced once, as it happens.
+    const phase = phaseAt(this.elapsed);
+    if (phase !== this.phase) {
+      this.phase = phase;
+      if (phase > 0) {
+        this.showBanner(PHASES[phase].banner, PHASES[phase].sub, 3);
+        this.sound.phase();
+      }
+    }
+
+    // Combo decay: the multiplier falls a step after a quiet stretch, and a
+    // fully decayed combo breaks the kill chain (streaks start over).
     if (this.combo > 1) {
       this.comboTimer -= dt;
       if (this.comboTimer <= 0) {
         this.combo -= 1;
         this.comboTimer = COMBO.decaySeconds;
+        if (this.combo === 1) this.chainKills = 0;
       }
     }
 
@@ -201,16 +224,17 @@ export class World {
       this.enemies.push(enemy);
       if (enemy.def.boss) {
         this.boss = enemy;
-        this.showBanner('⚠ THE WARDEN AWAKENS ⚠', 'A champion of the Void approaches', 3);
+        this.showBanner(`⚠ ${enemy.def.name} AWAKENS ⚠`, enemy.def.tagline, 3);
         this.sound.bossWarn();
       }
     }
 
-    // Enemy AI and ranged shots.
+    // Enemy AI and ranged shots (and the Herald's summons).
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
       const action = enemy.update(dt, this.player, this.elapsed, this.bolts, this.rng);
       if (action === 'shoot') this.enemyShoot(enemy);
+      else if (action === 'summon') this.bossSummon(enemy);
     }
 
     // Weapons fire; their events become damage below.
@@ -288,13 +312,22 @@ export class World {
     for (let i = this.beams.length - 1; i >= 0; i -= 1) {
       if (!this.beams[i].update(dt)) this.beams.splice(i, 1);
     }
+    // Relic drops wait on the floor until the Keeper walks over one.
+    for (let i = this.relicDrops.length - 1; i >= 0; i -= 1) {
+      const drop = this.relicDrops[i];
+      drop.age += dt;
+      if (dist2(drop.x, drop.y, this.player.x, this.player.y) < 34 * 34) {
+        this.relicDrops.splice(i, 1);
+        this.claimRelic(drop.id);
+      }
+    }
     for (let i = this.gems.length - 1; i >= 0; i -= 1) {
       const gem = this.gems[i];
       if (gem.update(dt, this.player, this.stats.magnet)) {
         this.gems.splice(i, 1);
         this.sound.gem();
         this.particles.burst(gem.x, gem.y, { count: 4, color: '#ffd166', speed: 90, size: 2, life: 0.25 });
-        const gained = this.player.gainXp(gem.value);
+        const gained = this.player.gainXp(gem.value + this.stats.xpBonus);
         if (gained > 0) {
           this.score += SCORE.perLevel * gained;
           this.openLevelUp();
@@ -384,12 +417,19 @@ export class World {
     if (killed) this.killEnemy(enemy);
   }
 
-  /** Score, combo and effects for a kill. */
+  /** Score, combo, streaks and effects for a kill. */
   killEnemy(enemy) {
     this.kills += 1;
     this.combo = Math.min(this.combo + 1, 5);
     this.comboTimer = COMBO.windowSeconds;
+    this.chainKills += 1;
     this.score += enemy.def.score * this.combo;
+    // A streak milestone, once per chain: a shout and a score bonus.
+    if (STREAKS[this.chainKills]) {
+      this.score += STREAK_BONUS[this.chainKills];
+      this.particles.floatText(enemy.x, enemy.y - 26, STREAKS[this.chainKills], { color: '#ffd166', size: 22 });
+      this.particles.floatText(enemy.x, enemy.y - 2, `+${STREAK_BONUS[this.chainKills]}`, { color: '#eef2ff', size: 14 });
+    }
     this.particles.burst(enemy.x, enemy.y, {
       count: enemy.def.boss ? 46 : 14,
       color: enemy.def.color,
@@ -400,9 +440,49 @@ export class World {
     if (enemy.def.boss) {
       this.particles.shockwave(enemy.x, enemy.y, { color: '#ffd166', maxRadius: 260, seconds: 0.7, width: 6 });
       this.particles.shake(9, 0.4);
-      this.showBanner('WARDEN FALLEN', `+${enemy.def.score * this.combo} score`, 2.2);
+      this.showBanner(`${enemy.def.name} FALLEN`, `+${enemy.def.score * this.combo} score — a relic lies where it fell`, 2.6);
+      this.dropRelic(enemy);
     }
     this.sound.enemyDie();
+  }
+
+  /** A fallen boss drops its relic on the arena floor. */
+  dropRelic(enemy) {
+    const id = relicForBossIndex(this.bossesSlain);
+    this.bossesSlain += 1;
+    if (!id) return;
+    this.relicDrops.push({ x: enemy.x, y: enemy.y, id, age: 0 });
+  }
+
+  /** Claim a relic: its power joins the run, permanently. */
+  claimRelic(id) {
+    const relic = RELICS[id];
+    if (!relic || this.relics.includes(id)) return;
+    this.relics.push(id);
+    relic.apply(this.stats, this.player);
+    this.showBanner(`RELIC CLAIMED — ${relic.name.toUpperCase()}`, relic.blurb, 3);
+    this.sound.relic();
+    this.particles.shockwave(this.player.x, this.player.y, { color: relic.color, maxRadius: 200, seconds: 0.6, width: 5 });
+    this.particles.floatText(this.player.x, this.player.y - 30, relic.name, { color: relic.color, size: 20 });
+  }
+
+  /** The Herald births Motes around itself. */
+  bossSummon(enemy) {
+    const count = enemy.def.summonCount ?? 3;
+    for (let i = 0; i < count; i += 1) {
+      if (this.enemies.length >= SPAWN.maxAlive) break;
+      const angle = this.rng.angle();
+      const child = new Enemy(
+        enemy.def.summons,
+        enemy.x + Math.cos(angle) * 64,
+        enemy.y + Math.sin(angle) * 64,
+        this.director.hpScaleAt(this.elapsed),
+        this.rng,
+      );
+      child.telegraph = 0.5;
+      this.enemies.push(child);
+    }
+    this.particles.burst(enemy.x, enemy.y, { count: 10, color: enemy.def.color, speed: 150, size: 3, life: 0.4 });
   }
 
   /** Drop starlight shards (and a heal for bosses) where an enemy fell. */
@@ -424,11 +504,21 @@ export class World {
     }
   }
 
-  /** An enemy's ranged attack: one aimed bolt, or a radial fan for Wardens. */
+  /** An enemy's ranged attack: a fan for the Herald, a ring for Wardens, one aimed bolt otherwise. */
   enemyShoot(enemy) {
     const def = enemy.def;
     const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
-    if (def.radialShots) {
+    if (def.fanShots) {
+      const spread = 0.28;
+      for (let i = 0; i < def.fanShots; i += 1) {
+        const a = angle + (i - (def.fanShots - 1) / 2) * spread;
+        this.bolts.push(new Bolt(
+          enemy.x, enemy.y,
+          Math.cos(a) * def.boltSpeed, Math.sin(a) * def.boltSpeed,
+          def.damage, def.color,
+        ));
+      }
+    } else if (def.radialShots) {
       for (let i = 0; i < def.radialShots; i += 1) {
         const a = (i / def.radialShots) * Math.PI * 2 + this.elapsed;
         this.bolts.push(new Bolt(
@@ -488,6 +578,7 @@ export class World {
       kills: this.kills,
       levelUps: this.levelUps,
       weapons: this.weapons.ids.map((id) => ({ id, level: this.weapons.level(id) })),
+      relics: this.relics.map((id) => ({ id, name: RELICS[id].name, icon: RELICS[id].icon })),
     };
   }
 }
